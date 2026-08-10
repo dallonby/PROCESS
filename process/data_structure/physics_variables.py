@@ -1682,6 +1682,9 @@ class PhysicsData:
     """Plasma outboard midplane (upstream) Eich 2013 SOL parallel power flux
     (qₗₗ,ᵤ) [MW/m²]"""
 
+    deg_b_plasma_outboard_flux_midplane: float = 0.0
+    """Plasma outboard midplane flux angle [deg]"""
+
     dt_power_density_plasma: float = 0.0
     sigmav_dt_average: float = 0.0
     dhe3_power_density: float = 0.0

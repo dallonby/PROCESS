@@ -473,6 +473,7 @@ OBS_VARS = {
     "i_cs_stress": None,
     "f_nd_alpha_electron": "f_nd_alpha_thermal_electron",
     "cost_model": "i_cost_model",
+    "deg_div_field_plate": "deg_b_div_lower_outboard_grazing",
 }
 
 OBS_VARS_HELP = {

@@ -197,10 +197,15 @@ class FWBSData:
     """
 
     f_cp_shield_material_flux: float = -1.0
-    """Multiplier applied to the ST centre-post fast-neutron-flux fit
-    (which assumes WC + 13% water) for the selected i_cp_shield_material
-    [-]. Leave unset (sentinel -1) to use the same defaults as
-    f_cp_shield_material_heat. The power-deposition ratio is used as an
+    """Constant override for the multiplier applied to the ST centre-post
+    fast-neutron-flux fit (which assumes WC + 13% water) for the selected
+    i_cp_shield_material [-]. Leave unset (sentinel -1) to use the
+    thickness-dependent fit A*exp(-dk*t) measured by an independent OpenMC
+    verification of this module's fits (W2B5+H2O: A=0.670, dk=1.893/m;
+    monolithic W2B5: A=0.914, dk=3.205/m; t = shield width clamped to the
+    validated 0.25-0.52 m domain; residuals within +/-3% of the measured
+    ratios over 0.25-0.55 m). Setting a value >= 0.01 forces that constant
+    at all thicknesses instead. The power-deposition ratio is used as an
     UNVERIFIED PROXY for the E > 0.1 MeV flux ratio: Windsor et al. (2021)
     publish no matched WC-vs-W2B5 fast-flux tallies. Their figures 6-7
     (monolithic shields; water layers narrow the fluence gap, their

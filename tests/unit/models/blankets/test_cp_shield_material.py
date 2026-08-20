@@ -37,7 +37,17 @@ def test_flux_fit_scaled_by_material(process_models, monkeypatch):
     w2b5 = ccfe_hcpb.st_tf_centrepost_fast_neut_flux(
         p_neutron_total_mw=400.0, sh_width=0.6, rmajor=3.0
     )
-    assert w2b5 == pytest.approx(0.24 * reference)
+    # default is the thickness-dependent fit, evaluated at the clamped
+    # top of the validated domain (0.52 m) for this 0.6 m shield
+    expected = CCFE_HCPB.cp_shield_material_flux_factor(2, -1.0, 0.6)
+    assert w2b5 == pytest.approx(expected * reference)
+
+    # a constant user override still applies verbatim
+    monkeypatch.setattr(ccfe_hcpb.data.fwbs, "f_cp_shield_material_flux", 0.24)
+    w2b5_const = ccfe_hcpb.st_tf_centrepost_fast_neut_flux(
+        p_neutron_total_mw=400.0, sh_width=0.6, rmajor=3.0
+    )
+    assert w2b5_const == pytest.approx(0.24 * reference)
 
 
 def test_heating_fit_scaled_by_material_sc_branch(process_models, monkeypatch):
@@ -67,3 +77,46 @@ def test_unknown_material_type_raises():
     documented ProcessValueError, not a bare TypeError."""
     with pytest.raises(ProcessValueError):
         CCFE_HCPB.cp_shield_material_factors([2], -1.0, -1.0)
+
+
+MEASURED_FLUX_RATIOS = {
+    # depth [m] -> (monolithic W2B5, W2B5+H2O), OpenMC verification 2026-08
+    0.25: (0.4105, 0.4187),
+    0.35: (0.2989, 0.3434),
+    0.46: (0.2081, 0.2898),
+    0.55: (0.1692, 0.2570),
+}
+
+
+def test_flux_fit_reproduces_measured_ratios():
+    """The thickness-dependent fit must stay within 4% of the OpenMC
+    measurements across the validated domain (largest residual: layered
+    -3.2% at 0.46 m; the 0.55 m points sit beyond the clamp, where the
+    held endpoint values land at +2.0% / -2.6%)."""
+    for depth, (mono, layered) in MEASURED_FLUX_RATIOS.items():
+        f2 = CCFE_HCPB.cp_shield_material_flux_factor(2, -1.0, depth)
+        f1 = CCFE_HCPB.cp_shield_material_flux_factor(1, -1.0, depth)
+        assert f2 == pytest.approx(mono, rel=0.04)
+        assert f1 == pytest.approx(layered, rel=0.04)
+
+
+def test_flux_fit_clamps_outside_validated_domain():
+    lo2 = CCFE_HCPB.cp_shield_material_flux_factor(2, -1.0, 0.10)
+    assert lo2 == CCFE_HCPB.cp_shield_material_flux_factor(2, -1.0, 0.25)
+    hi2 = CCFE_HCPB.cp_shield_material_flux_factor(2, -1.0, 0.90)
+    assert hi2 == CCFE_HCPB.cp_shield_material_flux_factor(2, -1.0, 0.52)
+
+
+def test_flux_constant_override_wins_at_any_thickness():
+    for depth in (0.10, 0.30, 0.55, 0.90):
+        assert CCFE_HCPB.cp_shield_material_flux_factor(2, 0.2, depth) == 0.2
+
+
+def test_flux_fit_identity_for_wc_baseline():
+    for depth in (0.10, 0.30, 0.55):
+        assert CCFE_HCPB.cp_shield_material_flux_factor(0, -1.0, depth) == 1.0
+
+
+def test_flux_fit_unknown_material_raises():
+    with pytest.raises(ProcessValueError):
+        CCFE_HCPB.cp_shield_material_flux_factor(9, -1.0, 0.4)

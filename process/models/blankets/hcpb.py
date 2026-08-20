@@ -1097,6 +1097,67 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
         2: (0.24, 0.24),
     }
 
+    # Thickness-dependent fast-flux ratio vs the WC + 13% water baseline,
+    # ratio(t) = A * exp(-dk * t) with t the physical shield width [m],
+    # clamped to the validated domain t in [0.25, 0.52] (endpoint values
+    # held outside it; no extrapolation). Weighted fits to an independent
+    # OpenMC slab verification (ENDF/B-VIII.0, photon transport, 4e7
+    # particles/material, 2026-08) whose validation legs reproduced the
+    # WC+H2O fast-flux e-folding of this module's fit within 5%, Windsor's
+    # W2B5 half-thickness exactly and the Table 2 heating ratios within
+    # 5-18%. Residuals vs the measured ratios are within +/-3% over
+    # 0.25-0.55 m. Values (A, dk):
+    CP_SHIELD_MATERIAL_FLUX_FIT: dict[int, tuple[float, float]] = {
+        0: (1.0, 0.0),
+        1: (0.670, 1.893),
+        2: (0.914, 3.205),
+    }
+    CP_SHIELD_FLUX_FIT_DOMAIN: tuple[float, float] = (0.25, 0.52)
+
+    @classmethod
+    def cp_shield_material_flux_factor(
+        cls, i_cp_shield_material, f_flux_input, sh_width
+    ):
+        """Fast-flux multiplier vs the WC + water fit for the chosen material.
+
+        A user-set constant f_cp_shield_material_flux (>= 0) always wins.
+        Left at its -1 sentinel, the multiplier is the thickness-dependent
+        fit A * exp(-dk * t) above, with the shield width clamped to the
+        verified domain.
+
+        Parameters
+        ----------
+        i_cp_shield_material :
+            shield material switch (0 WC+13% water, 1 layered W2B5+water,
+            2 monolithic W2B5)
+        f_flux_input :
+            user constant override; -1 selects the thickness-dependent fit
+        sh_width :
+            physical centre-post neutron shield width [m]
+
+        Returns
+        -------
+        :
+            multiplier on the WC + water fast-neutron-flux fit [-]
+
+        Raises
+        ------
+        ProcessValueError
+            if the material switch is not recognised
+        """
+        if f_flux_input >= 0.0:
+            return f_flux_input
+        try:
+            amp, dk = cls.CP_SHIELD_MATERIAL_FLUX_FIT[i_cp_shield_material]
+        except (KeyError, TypeError):
+            raise ProcessValueError(
+                "Unknown ST centre-post shield material",
+                i_cp_shield_material=i_cp_shield_material,
+            ) from None
+        t_lo, t_hi = cls.CP_SHIELD_FLUX_FIT_DOMAIN
+        t = min(max(sh_width, t_lo), t_hi)
+        return amp * np.exp(-dk * t)
+
     @classmethod
     def cp_shield_material_factors(
         cls, i_cp_shield_material, f_heat_input, f_flux_input
@@ -1191,13 +1252,13 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
                 * (p_neutron_total_mw / 800)
             )
 
-            # Shield-material scaling relative to the WC + 13% water fits
-            _, f_flux = self.cp_shield_material_factors(
+            # Shield-material scaling relative to the WC + 13% water fits:
+            # thickness-dependent fit by default, constant user override
+            neut_flux_cp *= self.cp_shield_material_flux_factor(
                 self.data.fwbs.i_cp_shield_material,
-                self.data.fwbs.f_cp_shield_material_heat,
                 self.data.fwbs.f_cp_shield_material_flux,
+                sh_width,
             )
-            neut_flux_cp *= f_flux
 
         return neut_flux_cp
 
@@ -1545,10 +1606,15 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
                 "(i_cp_shield_material)",
                 self.data.fwbs.i_cp_shield_material,
             )
-            _f_heat, _f_flux = self.cp_shield_material_factors(
+            _f_heat, _ = self.cp_shield_material_factors(
                 self.data.fwbs.i_cp_shield_material,
                 self.data.fwbs.f_cp_shield_material_heat,
                 self.data.fwbs.f_cp_shield_material_flux,
+            )
+            _f_flux = self.cp_shield_material_flux_factor(
+                self.data.fwbs.i_cp_shield_material,
+                self.data.fwbs.f_cp_shield_material_flux,
+                self.data.build.dr_shld_inboard,
             )
             po.ovarre(
                 self.outfile,
@@ -1558,7 +1624,7 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
             )
             po.ovarre(
                 self.outfile,
-                "CP shield material fast-flux multiplier vs WC+H2O",
+                "CP shield material fast-flux multiplier vs WC+H2O (at dr_shld_inboard)",
                 "(f_cp_shield_material_flux)",
                 _f_flux,
             )

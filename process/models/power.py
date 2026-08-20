@@ -1070,15 +1070,26 @@ class Power(Model):
                 self.data.tfcoil.n_tf_coils,
             )
 
-            # Use 13% of ideal Carnot efficiency to fit J. Miller estimate
-            # Rem SK : This ITER efficiency is very low compare to the Strowbridge curve
-            #          any reasons why?
+            # Second-law (fraction of Carnot) efficiency of the cryoplant:
+            # either the constant eff_tf_cryo (legacy; 13% ITER fit to the
+            # J. Miller estimate) or, with i_cryo_plant_efficiency = 1, the
+            # capacity-dependent Strobridge-survey value.
+            if self.data.tfcoil.i_cryo_plant_efficiency == 1:
+                self.data.tfcoil.eta_cryo_plant = (
+                    self.cryo_plant_second_law_efficiency(
+                        self.data.heat_transport.helpow,
+                        self.data.tfcoil.eta_cryo_plant_max,
+                    )
+                )
+            else:
+                self.data.tfcoil.eta_cryo_plant = self.data.tfcoil.eff_tf_cryo
+
             # Calculate electric power requirement for cryogenic plant at
             # self.data.tfcoil.temp_tf_cryo (MW)
             self.data.heat_transport.p_cryo_plant_electric_mw = (
                 1.0e-6
                 * (constants.TEMP_ROOM - self.data.tfcoil.temp_tf_cryo)
-                / (self.data.tfcoil.eff_tf_cryo * self.data.tfcoil.temp_tf_cryo)
+                / (self.data.tfcoil.eta_cryo_plant * self.data.tfcoil.temp_tf_cryo)
                 * self.data.heat_transport.helpow
             )
 
@@ -1097,12 +1108,22 @@ class Power(Model):
                 + self.data.fwbs.pnuc_cp_tf * 1.0e6
             )
 
+            # Second-law efficiency for the cryo-aluminium loop (same model
+            # switch as the SC loop, evaluated at its own heat load)
+            if self.data.tfcoil.i_cryo_plant_efficiency == 1:
+                eta_cryoal = self.cryo_plant_second_law_efficiency(
+                    self.data.heat_transport.helpow_cryal,
+                    self.data.tfcoil.eta_cryo_plant_max,
+                )
+            else:
+                eta_cryoal = self.data.tfcoil.eff_tf_cryo
+
             # Calculate electric power requirement for cryogenic plant at
             # self.data.tfcoil.temp_cp_coolant_inlet (MW)
             p_tf_cryoal_cryo = (
                 1.0e-6
                 * (constants.TEMP_ROOM - self.data.tfcoil.temp_cp_coolant_inlet)
-                / (self.data.tfcoil.eff_tf_cryo * self.data.tfcoil.temp_cp_coolant_inlet)
+                / (eta_cryoal * self.data.tfcoil.temp_cp_coolant_inlet)
                 * self.data.heat_transport.helpow_cryal
             )
 
@@ -1772,6 +1793,45 @@ class Power(Model):
             ),
         )
 
+    @staticmethod
+    def cryo_plant_second_law_efficiency(
+        q_cryo_watts: float, eta_max: float
+    ) -> float:
+        """Second-law (fraction of Carnot) cryoplant efficiency vs cooling capacity.
+
+        Strobridge refrigerator-survey correlation (T R Strobridge, "Cryogenic
+        Refrigerators - an Updated Survey", NBS Technical Note 655, 1974) in the
+        polynomial form fitted by P Kittel, "Cryocooler Performance Estimator",
+        Cryocoolers 14 (2007) 563: Table 1 there tabulates 3x the Strobridge
+        mean, so the polynomial is divided by 3 here. Strobridge found the
+        fraction-of-Carnot efficiency to depend on cooling capacity and only
+        weakly on cold temperature, so the curve is applied at any cryoplant
+        temperature.
+
+        Parameters
+        ----------
+        q_cryo_watts :
+            heat removal at cryogenic temperature (W); clamped to the
+            correlation's validity range 0.2 W - 1 MW
+        eta_max :
+            cap on the returned efficiency [-] (plant-scale benchmarks: LHC
+            4.5 K plants 0.28, ITER 4.5 K system ~0.20)
+
+        Returns
+        -------
+        :
+            second-law efficiency (fraction of the Carnot COP) [-]
+        """
+        log_q = np.log10(min(max(q_cryo_watts, 0.2), 1.0e6))
+        log_eta_3x = (
+            -1.25874
+            + 0.59998 * log_q
+            - 0.1474 * log_q**2
+            + 0.021323 * log_q**3
+            - 0.00125 * log_q**4
+        )
+        return min(eta_max, 10.0**log_eta_3x / 3.0)
+
     def cryo(
         self,
         i_tf_sup: int,
@@ -1925,6 +1985,13 @@ class Power(Model):
             "Temperature of cryogenic aluminium components (K)",
             "(temp_cp_coolant_inlet)",
             self.data.tfcoil.temp_cp_coolant_inlet,
+        )
+        po.ovarre(
+            self.outfile,
+            "Second-law (fraction of Carnot) cryoplant efficiency used",
+            "(eta_cryo_plant)",
+            self.data.tfcoil.eta_cryo_plant,
+            "OP ",
         )
         po.ovarre(
             self.outfile,

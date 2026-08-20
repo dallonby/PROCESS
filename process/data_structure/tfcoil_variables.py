@@ -614,7 +614,32 @@ class TFData:
     Using -1 set the default value depending on magnet technology:
     - i_tf_sup = 1 : SC magnet, eff_tf_cryo = 0.13 (ITER design)
     - i_tf_sup = 2 : Cryo-aluminium, eff_tf_cryo = 0.4
+    Only used when i_cryo_plant_efficiency = 0.
     """
+
+    i_cryo_plant_efficiency: int = 0
+    """Switch for the cryoplant second-law (fraction of Carnot) efficiency model:
+    - =0 constant efficiency eff_tf_cryo (legacy; ITER-fit 0.13 default for SC magnets)
+    - =1 capacity-dependent second-law efficiency from the Strobridge (1974)
+      refrigerator survey (NBS Technical Note 655), in the polynomial form fitted
+      by Kittel, Cryocoolers 14 (2007) 563 (Table 1 tabulates 3x the Strobridge
+      mean; divided by 3 here), evaluated at the cryogenic heat load helpow and
+      capped at eta_cryo_plant_max. Strobridge found the fraction-of-Carnot
+      efficiency to depend on capacity and only weakly on cold temperature, so
+      the same curve is applied at any temp_tf_cryo.
+    """
+
+    eta_cryo_plant_max: float = 0.30
+    """Cap on the second-law cryoplant efficiency used by
+    i_cryo_plant_efficiency = 1 [-]. Plant-scale benchmarks: LHC 4.5 K plants
+    achieved 0.28 (230 W of electric power per W at 4.5 K); the ITER 4.5 K
+    system is ~0.20 (75 kW average capacity for ~24 MW electric input); the
+    Strobridge survey mean approaches ~0.35 at 1 MW capacity.
+    """
+
+    eta_cryo_plant: float = 0.0
+    """Second-law cryoplant efficiency actually used for the TF cryoplant
+    electric power (output) [-]"""
 
     n_tf_coils: float = 16.0
     """Number of TF coils (default = 50 for stellarators). Number of TF coils outer legs for ST"""

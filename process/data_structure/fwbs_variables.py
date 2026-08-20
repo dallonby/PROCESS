@@ -220,7 +220,13 @@ class FWBSData:
     """
 
     flu_tf_neutron_fast_peak: float = 0.0
-    """peak fast neutron fluence on TF coil superconductor [n m^-2] """
+    """peak fast neutron fluence on TF coil superconductor [n m^-2].
+    Calculated over the full-power plant lifetime (f_t_plant_available *
+    life_plant) by the stellarator TF shielding model and, for spherical
+    tokamaks (itart = 1) with a superconducting TF, from the centre-post
+    fast neutron flux neut_flux_cp. Remains 0.0 (never calculated) in any
+    other configuration, so constraint 53 cannot be used there.
+    """
 
     npdiv: int = 2
     """number of divertor ports """

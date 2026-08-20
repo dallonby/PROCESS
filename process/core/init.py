@@ -350,6 +350,40 @@ def check_process(inputs, data):  # noqa: ARG001
             "Constraint 63 is requested without the correct vacuum model (simple)"
         )
 
+    # Constraint 53 (TF fast neutron fluence upper limit) compares
+    # flu_tf_neutron_fast_peak, which is only calculated by the stellarator
+    # TF shielding model and by the spherical-tokamak superconducting
+    # centre-post model. In any other configuration it stays 0.0 and the
+    # constraint would be silently satisfied.
+    if (
+        (
+            data.numerics.icc[
+                : data.numerics.n_equality_constraints
+                + data.numerics.n_inequality_constraints
+            ]
+            == 53
+        ).any()
+        and data.stellarator.istell == 0
+        and not (
+            data.physics.itart == 1
+            and data.tfcoil.i_tf_sup == TFConductorModel.SUPERCONDUCTING
+            # the fluence writer is the CCFE HCPB blanket model's centre-post
+            # path; other blanket models (e.g. DCLL, i_blanket_type=5) never
+            # calculate it
+            and data.fwbs.i_blanket_type == 1
+        )
+    ):
+        raise ProcessValidationError(
+            "Constraint 53 (TF fast neutron fluence limit) requires a model that"
+            " calculates flu_tf_neutron_fast_peak: a stellarator, or a spherical"
+            " tokamak (itart=1) with a superconducting TF (i_tf_sup=1) using the"
+            " CCFE HCPB blanket model (i_blanket_type=1). In this configuration"
+            " the fluence is never calculated and the constraint would be"
+            " silently satisfied. (For stellarators the constraint is accepted"
+            " as before this check; whether the stellarator TF shielding path"
+            " actually runs depends on its own blanket switches.)"
+        )
+
     #  Fuel ion fractions must add up to 1.0
     if (
         abs(

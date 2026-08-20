@@ -15,6 +15,7 @@ from process.models.engineering.ivc_functions import (
     calculate_pipe_bend_radius,
     pumping_powers_as_fractions,
 )
+from process.models.availability import YEAR_SECONDS
 from process.models.engineering.pumping import CoolantType
 from process.models.power import PumpingPowerModelTypes
 from process.models.tfcoil.base import TFConductorModel
@@ -129,6 +130,18 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
                 self.data.physics.p_neutron_total_mw,
                 self.data.build.dr_shld_inboard,
                 self.data.physics.rmajor,
+            )
+
+            # Peak fast neutron fluence accumulated by the centre-post TF
+            # conductor over the full-power plant lifetime [n/m^2]. This
+            # makes constraint 53 (fast fluence limit) usable for spherical
+            # tokamaks; the lifetime convention (f_t_plant_available *
+            # life_plant) matches the stellarator TF shielding model, the
+            # only other place this variable is calculated.
+            self.data.fwbs.flu_tf_neutron_fast_peak = self.st_cp_fluence(
+                self.data.fwbs.neut_flux_cp,
+                self.data.costs.f_t_plant_available,
+                self.data.costs.life_plant,
             )
 
             # TF, shield and total CP nuclear heating [MW]
@@ -1079,6 +1092,44 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
         # Solid angle fraction covered by the CP (OUTPUT) [-]
         return 0.25 * cp_sol_angle / np.pi
 
+    @staticmethod
+    def st_cp_fluence(neut_flux_cp, f_t_plant_available, life_plant):
+        """Fast neutron fluence on the ST centre-post TF conductor over the
+        full-power plant lifetime.
+
+        The availability model's centre-post lifetime (cplife) inverts this
+        same relation against flu_tf_neutron_fast_max; computing the fluence
+        here as well makes constraint 53 (fast fluence upper limit) usable
+        for spherical tokamaks. The full-power lifetime convention
+        (f_t_plant_available * life_plant, in 365.25-day years via the
+        availability model's YEAR_SECONDS) is the same as the stellarator TF
+        shielding model's, up to that model's rounded 3.154e7 s/yr constant
+        (0.06% lower). The exact-inversion property against cplife is what
+        matters and is unit-tested.
+
+        Note: when f_t_plant_available is itself calculated
+        (i_plant_availability = 1/2/3) the blanket model runs before the
+        availability model within one model evaluation, so this fluence uses
+        the previous evaluation's availability; at a converged solution the
+        two are self-consistent. With i_plant_availability = 0 the input
+        value is used and there is no lag.
+
+        Parameters
+        ----------
+        neut_flux_cp :
+            centre-post fast neutron flux, E > 0.1 MeV [m^-2 s^-1]
+        f_t_plant_available :
+            plant availability fraction [-]
+        life_plant :
+            plant lifetime [years]
+
+        Returns
+        -------
+        :
+            fast neutron fluence on the CP TF conductor [n/m^2]
+        """
+        return neut_flux_cp * f_t_plant_available * life_plant * YEAR_SECONDS
+
     def st_tf_centrepost_fast_neut_flux(self, p_neutron_total_mw, sh_width, rmajor):
         """
         Routine calculating the fast neutron (E > 0.1 MeV) flux reaching the TF
@@ -1434,6 +1485,13 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
                     "ST centrepost TF fast neutron fllux (E > 0.1 MeV) (m^(-2).s^(-1))",
                     "(neut_flux_cp)",
                     self.data.fwbs.neut_flux_cp,
+                    "OP ",
+                )
+                po.ovarre(
+                    self.outfile,
+                    "CP TF fast neutron fluence over full-power plant life (n/m2)",
+                    "(flu_tf_neutron_fast_peak)",
+                    self.data.fwbs.flu_tf_neutron_fast_peak,
                     "OP ",
                 )
             elif self.data.tfcoil.i_tf_sup == TFConductorModel.HELIUM_COOLED_ALUMINIUM:

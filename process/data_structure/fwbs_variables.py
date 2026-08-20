@@ -210,6 +210,14 @@ class FWBSData:
     magnitude is an estimate;
     set this input directly if better data are available. This factor
     drives neut_flux_cp and therefore the centre-post lifetime cplife.
+    An independent OpenMC slab verification (ENDF/B-VIII.0, photon
+    transport; 2026-08) measured the E > 0.1 MeV flux ratio directly:
+    monolithic W2B5 0.41/0.30/0.21/0.17 and W2B5+H2O 0.42/0.34/0.29/0.26
+    at 0.25/0.35/0.46/0.55 m, i.e. the constant deposition-ratio defaults
+    are CONSERVATIVE (under-credit W2B5) at design-relevant thicknesses
+    >= 0.45 m but OPTIMISTIC below ~0.35 m, where they overstate the
+    advantage by up to 1.7x - override this input accordingly for thin
+    shields.
     """
 
     f_a_fw_coolant_inboard: float = 0.0

@@ -1079,6 +1079,66 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
         # Solid angle fraction covered by the CP (OUTPUT) [-]
         return 0.25 * cp_sol_angle / np.pi
 
+    # (heat, flux) multipliers relative to the WC + 13% water MCNP fits,
+    # keyed by i_cp_shield_material. Geometric means of the Windsor et al.,
+    # Nucl. Fusion 61 (2021) 086018 Table 2 HTS-core power depositions
+    # across 253-671 mm shields, relative to the WC+H2O row:
+    # W2B5+H2O 0.33-0.44 (mean 0.37); monolithic W2B5 0.18-0.32 (mean 0.24).
+    # The flux multiplier reuses the power-deposition ratio as an UNVERIFIED
+    # PROXY for the E > 0.1 MeV flux: the paper gives no matched WC-vs-W2B5
+    # fast-flux tallies. Its figures 6-7 show W2B5 clearly superior to WC on
+    # HTS-core total fluence (at R0 = 1800 mm only W2B5 reaches a decade
+    # lifetime), so the direction is well supported, but the magnitude is
+    # not, and it can be overridden via f_cp_shield_material_flux. Validity
+    # domain of the underlying comparison: 253-671 mm shields.
+    CP_SHIELD_MATERIAL_FACTORS: dict[int, tuple[float, float]] = {
+        0: (1.0, 1.0),
+        1: (0.37, 0.37),
+        2: (0.24, 0.24),
+    }
+
+    @classmethod
+    def cp_shield_material_factors(
+        cls, i_cp_shield_material, f_heat_input, f_flux_input
+    ):
+        """Resolve the CP shield-material multipliers.
+
+        Parameters
+        ----------
+        i_cp_shield_material :
+            shield material switch (0 WC+13% water, 1 layered W2B5+water,
+            2 monolithic W2B5)
+        f_heat_input :
+            user value for the TF nuclear-heating multiplier; left unset
+            (sentinel -1) it resolves to the default for the chosen
+            material (explicit inputs are restricted to 0.01-1.0)
+        f_flux_input :
+            user value for the fast-flux multiplier; left unset (sentinel
+            -1) it resolves to the default for the chosen material
+
+        Returns
+        -------
+        :
+            (f_heat, f_flux) multipliers relative to the WC + water fits
+
+        Raises
+        ------
+        ProcessValueError
+            if the material switch is not recognised
+        """
+        try:
+            f_heat_default, f_flux_default = cls.CP_SHIELD_MATERIAL_FACTORS[
+                i_cp_shield_material
+            ]
+        except (KeyError, TypeError):
+            raise ProcessValueError(
+                "Unknown ST centre-post shield material",
+                i_cp_shield_material=i_cp_shield_material,
+            ) from None
+        f_heat = f_heat_default if f_heat_input < 0.0 else f_heat_input
+        f_flux = f_flux_default if f_flux_input < 0.0 else f_flux_input
+        return f_heat, f_flux
+
     def st_tf_centrepost_fast_neut_flux(self, p_neutron_total_mw, sh_width, rmajor):
         """
         Routine calculating the fast neutron (E > 0.1 MeV) flux reaching the TF
@@ -1130,6 +1190,14 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
                 * neut_flux_cp
                 * (p_neutron_total_mw / 800)
             )
+
+            # Shield-material scaling relative to the WC + 13% water fits
+            _, f_flux = self.cp_shield_material_factors(
+                self.data.fwbs.i_cp_shield_material,
+                self.data.fwbs.f_cp_shield_material_heat,
+                self.data.fwbs.f_cp_shield_material_flux,
+            )
+            neut_flux_cp *= f_flux
 
         return neut_flux_cp
 
@@ -1196,6 +1264,22 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
             # DO NOT TRUST THIS VALUE !!
             p_cp_shield_nuclear_heat_mw = (pneut / 800.0) * np.exp(3.882) - pnuc_cp_tf
             # ------------
+
+            # Shield-material scaling relative to the WC + 13% water fits.
+            # Only the TF heating is scaled here: in the full run() the CP
+            # shield heating is subsequently overwritten by the residual
+            # f_geom_cp * p_neutron_total_mw - pnuc_cp_tf, so the heat no
+            # longer reaching the TF is deposited in the shield coolant and
+            # CP energy is conserved on the production path. (The fitted
+            # shield term returned by this method, and hence the pnuc_cp
+            # total, is superseded by that overwrite - a pre-existing
+            # asymmetry this option does not change.)
+            f_heat, _ = self.cp_shield_material_factors(
+                self.data.fwbs.i_cp_shield_material,
+                self.data.fwbs.f_cp_shield_material_heat,
+                self.data.fwbs.f_cp_shield_material_flux,
+            )
+            pnuc_cp_tf *= f_heat
 
         # Superconducting / copper CP
         # ---------------------------
@@ -1277,6 +1361,22 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
 
             # Tungsten density correction
             pnuc_cp_tf *= f_wc_density
+
+            # Shield-material scaling relative to the WC + 13% water fits.
+            # Only the TF heating is scaled here: in the full run() the CP
+            # shield heating is subsequently overwritten by the residual
+            # f_geom_cp * p_neutron_total_mw - pnuc_cp_tf, so the heat no
+            # longer reaching the TF is deposited in the shield coolant and
+            # CP energy is conserved on the production path. (The fitted
+            # shield term returned by this method, and hence the pnuc_cp
+            # total, is superseded by that overwrite - a pre-existing
+            # asymmetry this option does not change.)
+            f_heat, _ = self.cp_shield_material_factors(
+                self.data.fwbs.i_cp_shield_material,
+                self.data.fwbs.f_cp_shield_material_heat,
+                self.data.fwbs.f_cp_shield_material_flux,
+            )
+            pnuc_cp_tf *= f_heat
 
             # Shield nuclear heat [MW]
             p_cp_shield_nuclear_heat_mw = pnuc_cp_sh_gam + pnuc_cp_sh_n
@@ -1439,6 +1539,29 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
             elif self.data.tfcoil.i_tf_sup == TFConductorModel.HELIUM_COOLED_ALUMINIUM:
                 po.osubhd(self.outfile, "(Aluminium magnet centrepost used)")
 
+            po.ovarre(
+                self.outfile,
+                "ST centrepost shield material (0 WC+H2O, 1 W2B5+H2O, 2 W2B5)",
+                "(i_cp_shield_material)",
+                self.data.fwbs.i_cp_shield_material,
+            )
+            _f_heat, _f_flux = self.cp_shield_material_factors(
+                self.data.fwbs.i_cp_shield_material,
+                self.data.fwbs.f_cp_shield_material_heat,
+                self.data.fwbs.f_cp_shield_material_flux,
+            )
+            po.ovarre(
+                self.outfile,
+                "CP shield material TF-heating multiplier vs WC+H2O",
+                "(f_cp_shield_material_heat)",
+                _f_heat,
+            )
+            po.ovarre(
+                self.outfile,
+                "CP shield material fast-flux multiplier vs WC+H2O",
+                "(f_cp_shield_material_flux)",
+                _f_flux,
+            )
             po.ovarre(
                 self.outfile,
                 "ST centrepost TF heating (MW)",

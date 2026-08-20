@@ -161,6 +161,57 @@ class FWBSData:
     calculation is used assuming water cooled (13%) tungsten carbide )
     """
 
+    i_cp_shield_material: int = 0
+    """Material assumed for the ST centre-post neutron shield in the CP
+    fast-flux and nuclear-heating fits:
+    - =0 tungsten carbide with 13% water coolant fraction (legacy; the
+      material of the original MCNP fits)
+    - =1 layered W2B5 + water
+    - =2 monolithic W2B5 (no water coolant)
+    Options 1 and 2 rescale the WC + water fits by
+    f_cp_shield_material_heat / f_cp_shield_material_flux, with defaults
+    from the like-for-like MCNP comparison of Windsor et al., Nucl. Fusion
+    61 (2021) 086018 (Table 2). Note the caveat of that paper's section 7:
+    the tungsten borides with the best shielding performance also carry the
+    highest thermal expansion per unit deposited energy, so thermal-stress
+    qualification of a W2B5 shield is an open engineering question.
+    """
+
+    f_cp_shield_material_heat: float = -1.0
+    """Multiplier applied to the ST centre-post TF nuclear-heating fits
+    (which assume WC + 13% water) for the selected i_cp_shield_material
+    [-]. Leave unset (sentinel -1) to use the default for the chosen
+    material: 1.0 (WC + water), 0.37 (layered W2B5 + water) or 0.24
+    (monolithic W2B5) - the geometric means of the Windsor et al. (2021)
+    Table 2 HTS-core power-deposition ratios across 253-671 mm shields
+    (ranges 0.33-0.44 and 0.18-0.32; the constant is within a factor 1.35
+    of the tabulated ratio everywhere in that range, which is also the
+    validity domain). Explicit input values are restricted to 0.01-1.0.
+    Only the TF heating fit is scaled; in the full model the CP shield
+    heating is the residual f_geom_cp * p_neutron - pnuc_cp_tf, so the
+    heat no longer reaching the TF is deposited in the shield coolant and
+    CP energy is conserved. The WC-fit engineering factors (x2 density
+    allowance, 10% steel derating, x1.7 reflection) are retained
+    unchanged, and shield masses/costs still assume the WC composition:
+    this is an attenuation-only material option.
+    """
+
+    f_cp_shield_material_flux: float = -1.0
+    """Multiplier applied to the ST centre-post fast-neutron-flux fit
+    (which assumes WC + 13% water) for the selected i_cp_shield_material
+    [-]. Leave unset (sentinel -1) to use the same defaults as
+    f_cp_shield_material_heat. The power-deposition ratio is used as an
+    UNVERIFIED PROXY for the E > 0.1 MeV flux ratio: Windsor et al. (2021)
+    publish no matched WC-vs-W2B5 fast-flux tallies. Their figures 6-7
+    (monolithic shields; water layers narrow the fluence gap, their
+    supplementary S3) show W2B5 far superior to WC on HTS-core total
+    neutron fluence - at R0 = 1800 mm only W2B5 reaches a decade HTS
+    lifetime - so the sign of the correction is well supported while its
+    magnitude is an estimate;
+    set this input directly if better data are available. This factor
+    drives neut_flux_cp and therefore the centre-post lifetime cplife.
+    """
+
     f_a_fw_coolant_inboard: float = 0.0
     """Inboard FW coolant cross-sectional area void fraction"""
 

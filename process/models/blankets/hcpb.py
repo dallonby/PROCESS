@@ -1097,22 +1097,47 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
         2: (0.24, 0.24),
     }
 
-    # Thickness-dependent fast-flux ratio vs the WC + 13% water baseline,
-    # ratio(t) = A * exp(-dk * t) with t the physical shield width [m],
-    # clamped to the validated domain t in [0.25, 0.52] (endpoint values
-    # held outside it; no extrapolation). Weighted fits to an independent
-    # OpenMC slab verification (ENDF/B-VIII.0, photon transport, 4e7
-    # particles/material, 2026-08) whose validation legs reproduced the
-    # WC+H2O fast-flux e-folding of this module's fit within 5%, Windsor's
-    # W2B5 half-thickness exactly and the Table 2 heating ratios within
-    # 5-18%. Residuals vs the measured ratios are within +/-3% over
-    # 0.25-0.55 m. Values (A, dk):
+    # Thickness-dependent E > 0.1 MeV neutron-flux ratio vs the WC + 13%
+    # water baseline, ratio(t) = A * exp(-dk * t) with t the clean-material
+    # path length [m] (the steel-derated width, see
+    # cp_shield_material_flux_factor), clamped to the measured domain
+    # t in [0.25, 0.545] (endpoint values held outside it; no
+    # extrapolation; A is the window-fit amplitude, not a ratio at zero
+    # thickness). Weighted fits (1/sigma^2 on ln ratio, 1 cm bins over
+    # 0.25-0.55 m) to a neutron-only OpenMC slab campaign (ENDF/B-VIII.0,
+    # 14.06 MeV source, 4e8 analog histories per material on an
+    # Apple-Metal GPU transport engine, 2026-08-21), accepted against a
+    # same-tree fp64 CPU run bin-by-bin (mean offsets <= 0.1%) and
+    # cross-checked against an independent OpenMC 0.15.3 survival-biased
+    # run (derived constants within 1%). This supersedes the 2026-08-20
+    # fit, whose flux tallies carried no particle filter and so counted
+    # the photon population too (+20% at the face, +40% deep), biasing
+    # both ratios low by 30-40%. Neutron-only validation legs: W2B5
+    # fast-flux half-thickness 36.2 mm vs Windsor 2021's 35.5-40 mm;
+    # WC+H2O 41.9 mm vs the 45.0 mm implied by this module's WC fit (7%
+    # steeper). The heating factors above keep resting on the earlier
+    # photon-transport run's Table 2 legs (5-18%). Residuals vs the
+    # measured ratios: layered <= 1% over the domain, monolithic <= 1.7%
+    # (largest -1.7% at 0.465 m). The measured ratios keep falling beyond
+    # 0.545 m, so the held deep endpoint over-predicts flux (conservative)
+    # by ~5% layered / ~15% monolithic at 0.585 m; below 0.25 m the held
+    # value under-predicts it (optimistic) - thin shields are
+    # over-credited. Slab geometry likely over-credits W2B5 at >= 0.45 m
+    # versus full-torus calculations - do not read the fit as conservative
+    # there. Values (A, dk):
     CP_SHIELD_MATERIAL_FLUX_FIT: dict[int, tuple[float, float]] = {
         0: (1.0, 0.0),
-        1: (0.670, 1.893),
-        2: (0.914, 3.205),
+        1: (0.791, 1.625),
+        2: (1.178, 3.021),
     }
-    CP_SHIELD_FLUX_FIT_DOMAIN: tuple[float, float] = (0.25, 0.52)
+    CP_SHIELD_FLUX_FIT_DOMAIN: tuple[float, float] = (0.25, 0.545)
+
+    # Fraction of the CP shield width occupied by steel support structure;
+    # shared by the WC fits (their exponents use the derated width) and by
+    # the material-substitution ratio, which was measured between clean
+    # (steel-free) slabs and therefore applies to the non-steel path
+    # length sh_width * (1 - CP_SHIELD_F_STEEL_STRUCT).
+    CP_SHIELD_F_STEEL_STRUCT: float = 0.1
 
     @classmethod
     def cp_shield_material_flux_factor(
@@ -1123,7 +1148,7 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
         A user-set constant f_cp_shield_material_flux (>= 0) always wins.
         Left at its -1 sentinel, the multiplier is the thickness-dependent
         fit A * exp(-dk * t) above, with the shield width clamped to the
-        verified domain.
+        measured domain.
 
         Parameters
         ----------
@@ -1133,7 +1158,11 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
         f_flux_input :
             user constant override; -1 selects the thickness-dependent fit
         sh_width :
-            physical centre-post neutron shield width [m]
+            physical centre-post neutron shield width [m]; the fit is
+            evaluated at the steel-derated clean-material path length
+            sh_width * (1 - CP_SHIELD_F_STEEL_STRUCT), consistent with
+            what the steel-free verification slabs measured and with the
+            derated exponents of the underlying WC fits
 
         Returns
         -------
@@ -1155,14 +1184,17 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
                 i_cp_shield_material=i_cp_shield_material,
             ) from None
         t_lo, t_hi = cls.CP_SHIELD_FLUX_FIT_DOMAIN
-        t = min(max(sh_width, t_lo), t_hi)
+        t_eff = sh_width * (1.0 - cls.CP_SHIELD_F_STEEL_STRUCT)
+        t = min(max(t_eff, t_lo), t_hi)
         return amp * np.exp(-dk * t)
 
     @classmethod
-    def cp_shield_material_factors(
-        cls, i_cp_shield_material, f_heat_input, f_flux_input
-    ):
-        """Resolve the CP shield-material multipliers.
+    def cp_shield_material_heat_factor(cls, i_cp_shield_material, f_heat_input):
+        """Resolve the CP shield-material TF-heating multiplier.
+
+        (The fast-flux multiplier has its own thickness-dependent resolver,
+        cp_shield_material_flux_factor; heating keeps the published Windsor
+        Table 2 constants.)
 
         Parameters
         ----------
@@ -1173,14 +1205,11 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
             user value for the TF nuclear-heating multiplier; left unset
             (sentinel -1) it resolves to the default for the chosen
             material (explicit inputs are restricted to 0.01-1.0)
-        f_flux_input :
-            user value for the fast-flux multiplier; left unset (sentinel
-            -1) it resolves to the default for the chosen material
 
         Returns
         -------
         :
-            (f_heat, f_flux) multipliers relative to the WC + water fits
+            heating multiplier relative to the WC + water fits
 
         Raises
         ------
@@ -1188,7 +1217,7 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
             if the material switch is not recognised
         """
         try:
-            f_heat_default, f_flux_default = cls.CP_SHIELD_MATERIAL_FACTORS[
+            f_heat_default, _ = cls.CP_SHIELD_MATERIAL_FACTORS[
                 i_cp_shield_material
             ]
         except (KeyError, TypeError):
@@ -1196,9 +1225,7 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
                 "Unknown ST centre-post shield material",
                 i_cp_shield_material=i_cp_shield_material,
             ) from None
-        f_heat = f_heat_default if f_heat_input < 0.0 else f_heat_input
-        f_flux = f_flux_default if f_flux_input < 0.0 else f_flux_input
-        return f_heat, f_flux
+        return f_heat_default if f_heat_input < 0.0 else f_heat_input
 
     def st_tf_centrepost_fast_neut_flux(self, p_neutron_total_mw, sh_width, rmajor):
         """
@@ -1227,7 +1254,7 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
         f_wc_density = 2
 
         # Fraction of steel structures
-        f_steel_struct = 0.1
+        f_steel_struct = self.CP_SHIELD_F_STEEL_STRUCT
 
         # CP fast neutron flux (E > 0.1 MeV) [m^{-2}.s^}{-1}]
         neut_flux_cp = 0
@@ -1298,7 +1325,7 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
         f_wc_density = 2
 
         # Fraction of steel structures
-        f_steel_struct = 0.1
+        f_steel_struct = self.CP_SHIELD_F_STEEL_STRUCT
 
         # Former nuclear heating calculations for Copper magnets
         # Commented out as no nuclear shielding was included
@@ -1335,10 +1362,9 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
             # shield term returned by this method, and hence the pnuc_cp
             # total, is superseded by that overwrite - a pre-existing
             # asymmetry this option does not change.)
-            f_heat, _ = self.cp_shield_material_factors(
+            f_heat = self.cp_shield_material_heat_factor(
                 self.data.fwbs.i_cp_shield_material,
                 self.data.fwbs.f_cp_shield_material_heat,
-                self.data.fwbs.f_cp_shield_material_flux,
             )
             pnuc_cp_tf *= f_heat
 
@@ -1432,10 +1458,9 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
             # shield term returned by this method, and hence the pnuc_cp
             # total, is superseded by that overwrite - a pre-existing
             # asymmetry this option does not change.)
-            f_heat, _ = self.cp_shield_material_factors(
+            f_heat = self.cp_shield_material_heat_factor(
                 self.data.fwbs.i_cp_shield_material,
                 self.data.fwbs.f_cp_shield_material_heat,
-                self.data.fwbs.f_cp_shield_material_flux,
             )
             pnuc_cp_tf *= f_heat
 
@@ -1606,10 +1631,9 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
                 "(i_cp_shield_material)",
                 self.data.fwbs.i_cp_shield_material,
             )
-            _f_heat, _ = self.cp_shield_material_factors(
+            _f_heat = self.cp_shield_material_heat_factor(
                 self.data.fwbs.i_cp_shield_material,
                 self.data.fwbs.f_cp_shield_material_heat,
-                self.data.fwbs.f_cp_shield_material_flux,
             )
             _f_flux = self.cp_shield_material_flux_factor(
                 self.data.fwbs.i_cp_shield_material,

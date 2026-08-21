@@ -168,10 +168,12 @@ class FWBSData:
       material of the original MCNP fits)
     - =1 layered W2B5 + water
     - =2 monolithic W2B5 (no water coolant)
-    Options 1 and 2 rescale the WC + water fits by
-    f_cp_shield_material_heat / f_cp_shield_material_flux, with defaults
-    from the like-for-like MCNP comparison of Windsor et al., Nucl. Fusion
-    61 (2021) 086018 (Table 2). Note the caveat of that paper's section 7:
+    Options 1 and 2 rescale the WC + water fits: the TF-heating
+    multiplier defaults to the like-for-like MCNP comparison of Windsor
+    et al., Nucl. Fusion 61 (2021) 086018 (Table 2), and the fast-flux
+    multiplier defaults to a thickness-dependent fit from an independent
+    OpenMC verification (see f_cp_shield_material_flux); both are
+    overridable via f_cp_shield_material_heat / f_cp_shield_material_flux. Note the caveat of that paper's section 7:
     the tungsten borides with the best shielding performance also carry the
     highest thermal expansion per unit deposited energy, so thermal-stress
     qualification of a W2B5 shield is an open engineering question.
@@ -200,29 +202,28 @@ class FWBSData:
     """Constant override for the multiplier applied to the ST centre-post
     fast-neutron-flux fit (which assumes WC + 13% water) for the selected
     i_cp_shield_material [-]. Leave unset (sentinel -1) to use the
-    thickness-dependent fit A*exp(-dk*t) measured by an independent OpenMC
-    verification of this module's fits (W2B5+H2O: A=0.670, dk=1.893/m;
-    monolithic W2B5: A=0.914, dk=3.205/m; t = shield width clamped to the
-    validated 0.25-0.52 m domain; residuals within +/-3% of the measured
-    ratios over 0.25-0.55 m). Setting a value >= 0.01 forces that constant
-    at all thicknesses instead. The power-deposition ratio is used as an
-    UNVERIFIED PROXY for the E > 0.1 MeV flux ratio: Windsor et al. (2021)
-    publish no matched WC-vs-W2B5 fast-flux tallies. Their figures 6-7
-    (monolithic shields; water layers narrow the fluence gap, their
-    supplementary S3) show W2B5 far superior to WC on HTS-core total
-    neutron fluence - at R0 = 1800 mm only W2B5 reaches a decade HTS
-    lifetime - so the sign of the correction is well supported while its
-    magnitude is an estimate;
-    set this input directly if better data are available. This factor
-    drives neut_flux_cp and therefore the centre-post lifetime cplife.
-    An independent OpenMC slab verification (ENDF/B-VIII.0, photon
-    transport; 2026-08) measured the E > 0.1 MeV flux ratio directly:
-    monolithic W2B5 0.41/0.30/0.21/0.17 and W2B5+H2O 0.42/0.34/0.29/0.26
-    at 0.25/0.35/0.46/0.55 m, i.e. the constant deposition-ratio defaults
-    are CONSERVATIVE (under-credit W2B5) at design-relevant thicknesses
-    >= 0.45 m but OPTIMISTIC below ~0.35 m, where they overstate the
-    advantage by up to 1.7x - override this input accordingly for thin
-    shields.
+    thickness-dependent fit A*exp(-dk*t) measured by a neutron-only OpenMC
+    slab campaign against this module's WC fits (W2B5+H2O: A=0.791,
+    dk=1.625/m; monolithic W2B5: A=1.178, dk=3.021/m; 2026-08-21, 4e8
+    analog histories per material, GPU engine accepted bin-by-bin against
+    a same-tree fp64 CPU run and cross-checked against OpenMC 0.15.3 to
+    within 1% in the derived constants), evaluated at the steel-derated
+    clean-material path length t = sh_width * 0.9 and clamped to the
+    measured domain t in [0.25, 0.545] m (endpoint values held outside;
+    beyond 0.545 m the held value over-predicts flux - conservative - by
+    ~5% layered / ~15% monolithic at 0.585 m, below 0.25 m it
+    under-predicts it). Fit residuals are within 1% (layered) and 1.7%
+    (monolithic) of the measured ratios. These constants supersede the
+    2026-08-20 fit (0.670/1.893 and 0.914/3.205), whose tallies included
+    the photon population and biased both ratios low by 30-40%. Cautions: the
+    slab geometry likely over-credits W2B5 at design-relevant thicknesses
+    versus full-torus calculations (Windsor's Table 2 heating ratios turn
+    back up beyond ~0.45 m where the slab keeps falling), so this default
+    should NOT be read as conservative there; and below the clamp floor
+    the held value still over-credits W2B5 (measured ratio rises to ~0.58
+    at 0.15 m). Setting a value >= 0.01 forces that constant at all
+    thicknesses instead. This factor drives neut_flux_cp and therefore
+    the centre-post lifetime cplife.
     """
 
     f_a_fw_coolant_inboard: float = 0.0

@@ -1122,9 +1122,17 @@ class CCFE_HCPB(OutboardBlanket, InboardBlanket):
     # 0.545 m, so the held deep endpoint over-predicts flux (conservative)
     # by ~5% layered / ~15% monolithic at 0.585 m; below 0.25 m the held
     # value under-predicts it (optimistic) - thin shields are
-    # over-credited. Slab geometry likely over-credits W2B5 at >= 0.45 m
-    # versus full-torus calculations - do not read the fit as conservative
-    # there. Values (A, dk):
+    # over-credited. The fit was checked against full-machine geometry on
+    # 2026-08-23 (axisymmetric R-Z model of this radial build, D-shaped
+    # 14.06 MeV source, 4-6e8 histories per material): the slab-derived
+    # ratios transfer to torus geometry within a few percent -- torus/slab
+    # 0.97-1.00 over 0.18-0.43 m, and at the design point 0.929 +/- 0.031
+    # (monolithic) and 1.025 +/- 0.029 (layered), i.e. mildly conservative
+    # for monolithic and exact for layered, and unchanged when the outboard
+    # blanket and divertor are voided. An earlier caution here, inferred
+    # from Windsor's Table 2 heating curves turning back up beyond 0.45 m,
+    # said the slab over-credits W2B5 at design thickness; measured on fast
+    # flux it does not. Values (A, dk):
     CP_SHIELD_MATERIAL_FLUX_FIT: dict[int, tuple[float, float]] = {
         0: (1.0, 0.0),
         1: (0.791, 1.625),

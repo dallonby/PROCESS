@@ -215,11 +215,14 @@ class FWBSData:
     under-predicts it). Fit residuals are within 1% (layered) and 1.7%
     (monolithic) of the measured ratios. These constants supersede the
     2026-08-20 fit (0.670/1.893 and 0.914/3.205), whose tallies included
-    the photon population and biased both ratios low by 30-40%. Cautions: the
-    slab geometry likely over-credits W2B5 at design-relevant thicknesses
-    versus full-torus calculations (Windsor's Table 2 heating ratios turn
-    back up beyond ~0.45 m where the slab keeps falling), so this default
-    should NOT be read as conservative there; and below the clamp floor
+    the photon population and biased both ratios low by 30-40%. A full-machine
+    axisymmetric transport check of this radial build (2026-08-23) found
+    the slab-derived ratios transfer to torus geometry within a few
+    percent -- torus/slab 0.929 +/- 0.031 (monolithic) and 1.025 +/- 0.029
+    (layered) at the design point -- so the fit is mildly conservative for
+    monolithic and exact for layered; an earlier caution that slab
+    geometry over-credits W2B5 at design thickness was inferred from
+    heating curves and is not borne out on fast flux. Caution: below the clamp floor
     the held value still over-credits W2B5 (measured ratio rises to ~0.58
     at 0.15 m). Setting a value >= 0.01 forces that constant at all
     thicknesses instead. This factor drives neut_flux_cp and therefore
